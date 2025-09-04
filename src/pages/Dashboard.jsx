@@ -5,22 +5,19 @@ import { ref, onValue } from "firebase/database";
 function Dashboard() {
   const [kindergartens, setKindergartens] = useState([]);
   const [menu, setMenu] = useState([]);
+  const [doneMap, setDoneMap] = useState({}); // ключ: "kgId-dishId-diet"
 
-  // Мапа для відповідності дієт ключам у садках
   const dietMap = {
     bezmleczna: "dairyFree",
     bezgluten: "glutenFree",
   };
 
-  // Підписка на Firebase
+  // Підписка на садки, меню та виконані страви
   useEffect(() => {
     const kgRef = ref(db, "kindergartens");
     onValue(kgRef, (snapshot) => {
       const data = snapshot.val() || {};
-      const list = Object.keys(data).map((key) => ({
-        id: key,
-        ...data[key],
-      }));
+      const list = Object.keys(data).map((key) => ({ id: key, ...data[key] }));
       setKindergartens(list);
     });
 
@@ -34,24 +31,30 @@ function Dashboard() {
       }));
       setMenu(list);
     });
+
+    const doneRef = ref(db, "doneMap");
+    onValue(doneRef, (snapshot) => {
+      const data = snapshot.val() || {};
+      setDoneMap(data);
+    });
   }, []);
 
-  // Підрахунок порцій
   const calculateAmount = (dish, kg, diet = "") => {
-    if (!diet) {
-      // Для звичайної страви беремо всіх дітей
-      return Number(kg.children || 0) * dish.portion;
-    } else if (dietMap[diet]) {
-      const field = dietMap[diet];
-      return Number(kg[field] || 0) * dish.portion;
-    }
-    return 0;
+    if (!diet) return Number(kg.children || 0) * dish.portion;
+    const field = dietMap[diet];
+    return Number(kg[field] || 0) * dish.portion;
   };
 
-  // Колонки таблиці
+  // Формуємо колонки таблиці
   const tableColumns = menu.flatMap((dish) => {
-    const normal = { name: dish.name, diet: "", portion: dish.portion };
+    const normal = {
+      id: dish.id,
+      name: dish.name,
+      diet: "",
+      portion: dish.portion,
+    };
     const dietCols = dish.diets.map((d) => ({
+      id: dish.id,
       name: dish.name,
       diet: d,
       portion: dish.portion,
@@ -59,7 +62,7 @@ function Dashboard() {
     return [normal, ...dietCols];
   });
 
-  // Загальні суми
+  // Підрахунок загальних сум
   const totals = tableColumns.map((col) =>
     kindergartens.reduce(
       (sum, kg) => sum + calculateAmount(col, kg, col.diet),
@@ -91,26 +94,34 @@ function Dashboard() {
             </tr>
           </thead>
           <tbody>
-            {kindergartens.map((kg, kidx) => (
-              <tr key={kidx}>
+            {kindergartens.map((kg) => (
+              <tr key={kg.id}>
                 <td>{kg.name}</td>
                 {tableColumns.map((col, cidx) => {
                   const amount = calculateAmount(col, kg, col.diet);
+                  const key = `${kg.id}-${col.id}-${col.diet || "normal"}`;
+                  const isDone = doneMap[key];
+
                   return (
-                    <td key={cidx} style={{ textAlign: "center" }}>
+                    <td
+                      key={cidx}
+                      style={{
+                        textAlign: "center",
+                        background: isDone ? "#b2f2bb" : "#fff",
+                        fontWeight: isDone ? "bold" : "normal",
+                      }}
+                    >
                       {amount}
-                      {col.diet && ` (${kg[dietMap[col.diet]] || 0})`}
                     </td>
                   );
                 })}
               </tr>
             ))}
+            {/* Рядок з загальною сумою */}
             <tr style={{ fontWeight: "bold", background: "#eef" }}>
               <td>Ogólna ilość</td>
               {totals.map((t, idx) => (
-                <td key={idx} style={{ textAlign: "center" }}>
-                  {t}
-                </td>
+                <td key={idx}>{t}</td>
               ))}
             </tr>
           </tbody>
