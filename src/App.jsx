@@ -8,22 +8,22 @@ function App() {
   return (
     <Router>
       <nav style={{ padding: "10px", background: "#eee" }}>
-        <Link to="/" style={{ marginRight: "10px" }}>
+        <Link to="/kindergarten-app/" style={{ marginRight: "10px" }}>
           Przedszkola
         </Link>
-        <Link to="/menu" style={{ marginRight: "10px" }}>
+        <Link to="/kindergarten-app/menu" style={{ marginRight: "10px" }}>
           Menu
         </Link>
-        <Link to="/dashboard" style={{ marginRight: "10px" }}>
+        <Link to="/kindergarten-app/dashboard" style={{ marginRight: "10px" }}>
           Przydział posiłków
         </Link>
-        <Link to="/prepare">Przygotowanie dań</Link>
+        <Link to="/kindergarten-app/prepare">Przygotowanie dań</Link>
       </nav>
       <Routes>
-        <Route path="/" element={<Kindergartens />} />
-        <Route path="/menu" element={<Menu />} />
-        <Route path="/dashboard" element={<Dashboard />} />
-        <Route path="/prepare" element={<PrepareDishes />} />
+        <Route path="/kindergarten-app/" element={<Kindergartens />} />
+        <Route path="/kindergarten-app/menu" element={<Menu />} />
+        <Route path="/kindergarten-app/dashboard" element={<Dashboard />} />
+        <Route path="/kindergarten-app/prepare" element={<PrepareDishes />} />
       </Routes>
     </Router>
   );
