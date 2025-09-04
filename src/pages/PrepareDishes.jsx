@@ -1,77 +1,73 @@
 import React, { useState, useEffect } from "react";
+import { db } from "../firebase";
+import { ref, onValue, set } from "firebase/database";
 
 function PrepareDishes() {
   const [menu, setMenu] = useState([]);
   const [kindergartens, setKindergartens] = useState([]);
-  const [selectedDishes, setSelectedDishes] = useState([]);
-  const [selectedDiets, setSelectedDiets] = useState({});
-  const [doneMap, setDoneMap] = useState({});
+  const [selectedDishes, setSelectedDishes] = useState([]); // Вибрані страви
+  const [selectedDiets, setSelectedDiets] = useState({}); // ключ: "dish-diet"
+  const [doneMap, setDoneMap] = useState({}); // ключ: "kg-dish-diet"
 
-  // Завантаження menu і kindergartens
-  useEffect(() => {
-    const savedMenu = localStorage.getItem("menu");
-    const savedKindergartens = localStorage.getItem("kindergartens");
-    setMenu(savedMenu ? JSON.parse(savedMenu) : []);
-    setKindergartens(savedKindergartens ? JSON.parse(savedKindergartens) : []);
-  }, []);
-
-  // Відновлення стану користувача з localStorage
-  useEffect(() => {
-    const savedDoneMap = localStorage.getItem("doneMap");
-    const savedSelectedDishes = localStorage.getItem("selectedDishes");
-    const savedSelectedDiets = localStorage.getItem("selectedDiets");
-
-    if (savedDoneMap) setDoneMap(JSON.parse(savedDoneMap));
-    if (savedSelectedDishes) setSelectedDishes(JSON.parse(savedSelectedDishes));
-    if (savedSelectedDiets) setSelectedDiets(JSON.parse(savedSelectedDiets));
-  }, []);
-
-  // Тогл для обраної страви
-  const toggleDish = (dishName) => {
-    setSelectedDishes((prev) => {
-      const newArr = prev.includes(dishName)
-        ? prev.filter((d) => d !== dishName)
-        : [...prev, dishName];
-      localStorage.setItem("selectedDishes", JSON.stringify(newArr));
-      return newArr;
-    });
+  const dietMap = {
+    bezmleczna: "dairyFree",
+    bezgluten: "glutenFree",
   };
 
-  // Тогл для дієти
-  const toggleDiet = (dishName, diet) => {
-    const key = `${dishName}-${diet}`;
+  useEffect(() => {
+    const menuRef = ref(db, "menu");
+    onValue(menuRef, (snapshot) => {
+      const data = snapshot.val() || {};
+      const list = Object.keys(data).map((key) => ({ id: key, ...data[key] }));
+      setMenu(list);
+    });
+
+    const kgRef = ref(db, "kindergartens");
+    onValue(kgRef, (snapshot) => {
+      const data = snapshot.val() || {};
+      const list = Object.keys(data).map((key) => ({ id: key, ...data[key] }));
+      setKindergartens(list);
+    });
+
+    const doneRef = ref(db, "doneMap");
+    onValue(doneRef, (snapshot) => {
+      const data = snapshot.val() || {};
+      setDoneMap(data);
+    });
+  }, []);
+
+  const toggleDish = (dishId) => {
+    setSelectedDishes((prev) =>
+      prev.includes(dishId)
+        ? prev.filter((id) => id !== dishId)
+        : [...prev, dishId]
+    );
+  };
+
+  const toggleDiet = (dishId, diet) => {
+    const key = `${dishId}-${diet}`;
     setSelectedDiets((prev) => {
-      const newObj = { ...prev, [key]: !prev[key] };
-      localStorage.setItem("selectedDiets", JSON.stringify(newObj));
-      return newObj;
+      const newState = { ...prev, [key]: !prev[key] };
+      set(ref(db, `selectedDiets/${key}`), newState[key]);
+      return newState;
     });
   };
 
-  // Тогл для відмітки виконано
-  const toggleDone = (kgName, dishName, diet) => {
-    const key = `${kgName}-${dishName}-${diet || "normal"}`;
-    setDoneMap((prev) => {
-      const newObj = { ...prev, [key]: !prev[key] };
-      localStorage.setItem("doneMap", JSON.stringify(newObj));
-      return newObj;
-    });
+  const toggleDone = (kgId, dishId, diet) => {
+    const key = `${kgId}-${dishId}-${diet || "normal"}`;
+    const newValue = !doneMap[key];
+    setDoneMap((prev) => ({ ...prev, [key]: newValue }));
+    set(ref(db, `doneMap/${key}`), newValue);
   };
 
-  // Розрахунок кількості порцій
   const calculateAmount = (dish, kg, diet = "") => {
-    const children = Number(kg.children || 0);
-    const glutenFree = Number(kg.glutenFree || 0);
-    const dairyFree = Number(kg.dairyFree || 0);
-
     if (!diet || diet === "normal") {
-      return children * dish.portion; // усі діти для звичайної страви
-    } else if (diet === "bezgluten") {
-      return glutenFree * dish.portion;
-    } else if (diet === "bezmleczna") {
-      return dairyFree * dish.portion;
+      // Для простих страв беремо всіх дітей
+      return Number(kg.children || 0) * dish.portion;
+    } else {
+      const field = dietMap[diet];
+      return Number(kg[field] || 0) * dish.portion;
     }
-
-    return 0;
   };
 
   return (
@@ -80,40 +76,41 @@ function PrepareDishes() {
 
       <h3>Wybierz dania do przygotowania:</h3>
       <div style={{ marginBottom: "20px" }}>
-        {menu.map((dish) => (
-          <div key={dish.name} style={{ marginBottom: "10px" }}>
-            <label>
-              <input
-                type="checkbox"
-                checked={selectedDishes.includes(dish.name)}
-                onChange={() => toggleDish(dish.name)}
-              />{" "}
-              {dish.name} 
-            </label>
+        {menu.map((dish) => {
+          const dietsArray = Array.isArray(dish.diets) ? dish.diets : [];
+          return (
+            <div key={dish.id} style={{ marginBottom: "10px" }}>
+              <label>
+                <input
+                  type="checkbox"
+                  checked={selectedDishes.includes(dish.id)}
+                  onChange={() => toggleDish(dish.id)}
+                />{" "}
+                {dish.name} ({dish.portion} g/szt.)
+              </label>
 
-            {/* Чекбокси для всіх дієт цієї страви */}
-            {selectedDishes.includes(dish.name) && dish.diets.length > 0 && (
-              <div style={{ marginLeft: "20px", marginTop: "5px" }}>
-                {dish.diets.map((diet) => {
-                  const key = `${dish.name}-${diet}`;
-                  return (
-                    <label key={key} style={{ marginRight: "10px" }}>
-                      <input
-                        type="checkbox"
-                        checked={!!selectedDiets[key]}
-                        onChange={() => toggleDiet(dish.name, diet)}
-                      />{" "}
-                      {diet}
-                    </label>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        ))}
+              {selectedDishes.includes(dish.id) && dietsArray.length > 0 && (
+                <div style={{ marginLeft: "20px", marginTop: "5px" }}>
+                  {dietsArray.map((diet) => {
+                    const key = `${dish.id}-${diet}`;
+                    return (
+                      <label key={key} style={{ marginRight: "10px" }}>
+                        <input
+                          type="checkbox"
+                          checked={!!selectedDiets[key]}
+                          onChange={() => toggleDiet(dish.id, diet)}
+                        />{" "}
+                        {diet}
+                      </label>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          );
+        })}
       </div>
 
-      {/* Таблиця для садків */}
       {selectedDishes.length > 0 && (
         <table
           border="1"
@@ -123,17 +120,16 @@ function PrepareDishes() {
           <thead>
             <tr>
               <th>Przedszkole</th>
-              {selectedDishes.map((dishName) => {
-                const dish = menu.find((d) => d.name === dishName);
+              {selectedDishes.map((dishId) => {
+                const dish = menu.find((d) => d.id === dishId);
+                const dietsArray = Array.isArray(dish.diets) ? dish.diets : [];
                 const cols = ["normal"];
-                if (dish.diets.length > 0) {
-                  dish.diets.forEach((diet) => {
-                    if (selectedDiets[`${dishName}-${diet}`]) cols.push(diet);
-                  });
-                }
+                dietsArray.forEach((diet) => {
+                  if (selectedDiets[`${dishId}-${diet}`]) cols.push(diet);
+                });
                 return cols.map((diet) => (
-                  <th key={`${dishName}-${diet}`}>
-                    {dishName} {diet !== "normal" ? `(${diet})` : ""}
+                  <th key={`${dishId}-${diet}`}>
+                    {dish.name} {diet !== "normal" ? `(${diet})` : ""}
                   </th>
                 ));
               })}
@@ -141,30 +137,31 @@ function PrepareDishes() {
           </thead>
           <tbody>
             {kindergartens.map((kg) => (
-              <tr key={kg.name}>
+              <tr key={kg.id}>
                 <td>{kg.name}</td>
-                {selectedDishes.map((dishName) => {
-                  const dish = menu.find((d) => d.name === dishName);
+                {selectedDishes.map((dishId) => {
+                  const dish = menu.find((d) => d.id === dishId);
+                  const dietsArray = Array.isArray(dish.diets)
+                    ? dish.diets
+                    : [];
                   const cols = ["normal"];
-                  if (dish.diets.length > 0) {
-                    dish.diets.forEach((diet) => {
-                      if (selectedDiets[`${dishName}-${diet}`]) cols.push(diet);
-                    });
-                  }
+                  dietsArray.forEach((diet) => {
+                    if (selectedDiets[`${dishId}-${diet}`]) cols.push(diet);
+                  });
                   return cols.map((diet) => {
                     const amount = calculateAmount(
                       dish,
                       kg,
                       diet !== "normal" ? diet : ""
                     );
-                    const key = `${kg.name}-${dishName}-${diet}`;
+                    const key = `${kg.id}-${dishId}-${diet}`;
                     return (
                       <td
                         key={key}
                         onClick={() =>
                           toggleDone(
-                            kg.name,
-                            dishName,
+                            kg.id,
+                            dishId,
                             diet !== "normal" ? diet : ""
                           )
                         }

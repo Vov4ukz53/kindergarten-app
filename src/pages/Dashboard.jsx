@@ -1,44 +1,65 @@
 import React, { useState, useEffect } from "react";
+import { db } from "../firebase";
+import { ref, onValue } from "firebase/database";
 
 function Dashboard() {
   const [kindergartens, setKindergartens] = useState([]);
   const [menu, setMenu] = useState([]);
 
-  useEffect(() => {
-    const savedKindergartens = localStorage.getItem("kindergartens");
-    const savedMenu = localStorage.getItem("menu");
-
-    setKindergartens(savedKindergartens ? JSON.parse(savedKindergartens) : []);
-    setMenu(
-      savedMenu
-        ? JSON.parse(savedMenu).map((d) => ({
-            ...d,
-            diets: Array.isArray(d.diets) ? d.diets : [],
-          }))
-        : []
-    );
-  }, []);
-
-  const calculateAmount = (dish, kg, diet = "") => {
-    if (diet === "bezmleczna") return Number(kg.dairyFree || 0) * dish.portion;
-    if (diet === "bezgluten") return Number(kg.glutenFree || 0) * dish.portion;
-    return Number(kg.children || 0) * dish.portion;
+  // Мапа для відповідності дієт ключам у садках
+  const dietMap = {
+    bezmleczna: "dairyFree",
+    bezgluten: "glutenFree",
   };
 
+  // Підписка на Firebase
+  useEffect(() => {
+    const kgRef = ref(db, "kindergartens");
+    onValue(kgRef, (snapshot) => {
+      const data = snapshot.val() || {};
+      const list = Object.keys(data).map((key) => ({
+        id: key,
+        ...data[key],
+      }));
+      setKindergartens(list);
+    });
+
+    const menuRef = ref(db, "menu");
+    onValue(menuRef, (snapshot) => {
+      const data = snapshot.val() || {};
+      const list = Object.keys(data).map((key) => ({
+        id: key,
+        ...data[key],
+        diets: Array.isArray(data[key].diets) ? data[key].diets : [],
+      }));
+      setMenu(list);
+    });
+  }, []);
+
+  // Підрахунок порцій
+  const calculateAmount = (dish, kg, diet = "") => {
+    if (!diet) {
+      // Для звичайної страви беремо всіх дітей
+      return Number(kg.children || 0) * dish.portion;
+    } else if (dietMap[diet]) {
+      const field = dietMap[diet];
+      return Number(kg[field] || 0) * dish.portion;
+    }
+    return 0;
+  };
+
+  // Колонки таблиці
   const tableColumns = menu.flatMap((dish) => {
     const normal = { name: dish.name, diet: "", portion: dish.portion };
-    const dietColumns =
-      dish.diets && dish.diets.length > 0
-        ? dish.diets.map((d) => ({
-            name: dish.name,
-            diet: d,
-            portion: dish.portion,
-          }))
-        : [];
-    return [normal, ...dietColumns];
+    const dietCols = dish.diets.map((d) => ({
+      name: dish.name,
+      diet: d,
+      portion: dish.portion,
+    }));
+    return [normal, ...dietCols];
   });
 
-  // Підрахунок сум по кожній колонці
+  // Загальні суми
   const totals = tableColumns.map((col) =>
     kindergartens.reduce(
       (sum, kg) => sum + calculateAmount(col, kg, col.diet),
@@ -75,29 +96,21 @@ function Dashboard() {
                 <td>{kg.name}</td>
                 {tableColumns.map((col, cidx) => {
                   const amount = calculateAmount(col, kg, col.diet);
-                  if (col.diet === "bezmleczna") {
-                    return (
-                      <td key={cidx}>
-                        {amount} ({kg.dairyFree || 0})
-                      </td>
-                    );
-                  } else if (col.diet === "bezgluten") {
-                    return (
-                      <td key={cidx}>
-                        {amount} ({kg.glutenFree || 0})
-                      </td>
-                    );
-                  } else {
-                    return <td key={cidx}>{amount}</td>;
-                  }
+                  return (
+                    <td key={cidx} style={{ textAlign: "center" }}>
+                      {amount}
+                      {col.diet && ` (${kg[dietMap[col.diet]] || 0})`}
+                    </td>
+                  );
                 })}
               </tr>
             ))}
-            {/* Рядок з загальною сумою */}
             <tr style={{ fontWeight: "bold", background: "#eef" }}>
               <td>Ogólna ilość</td>
               {totals.map((t, idx) => (
-                <td key={idx}>{t}</td>
+                <td key={idx} style={{ textAlign: "center" }}>
+                  {t}
+                </td>
               ))}
             </tr>
           </tbody>
