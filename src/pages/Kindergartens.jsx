@@ -1,35 +1,42 @@
 import React, { useState, useEffect } from "react";
+import { db } from "../firebase"; // твій firebase.js
+import { ref, onValue, set, push, remove, update } from "firebase/database";
 
 function Kindergartens() {
-  const [kindergartens, setKindergartens] = useState(() => {
-    const saved = localStorage.getItem("kindergartens");
-    return saved ? JSON.parse(saved) : [];
-  });
-
+  const [kindergartens, setKindergartens] = useState([]);
   const [newName, setNewName] = useState("");
 
+  // Підписка на зміни в Firebase
   useEffect(() => {
-    localStorage.setItem("kindergartens", JSON.stringify(kindergartens));
-  }, [kindergartens]);
+    const kgRef = ref(db, "kindergartens");
+    onValue(kgRef, (snapshot) => {
+      const data = snapshot.val() || {};
+      const list = Object.keys(data).map((key) => ({ id: key, ...data[key] }));
+      setKindergartens(list);
+    });
+  }, []);
 
   const addKindergarten = () => {
     if (!newName.trim()) return;
-    setKindergartens([
-      ...kindergartens,
-      { name: newName.trim(), children: "", glutenFree: "", dairyFree: "" },
-    ]);
+    const kgRef = ref(db, "kindergartens");
+    const newKgRef = push(kgRef);
+    set(newKgRef, {
+      name: newName.trim(),
+      children: "",
+      glutenFree: "",
+      dairyFree: "",
+    });
     setNewName("");
   };
 
-  const removeKindergarten = (index) => {
-    const newList = kindergartens.filter((_, i) => i !== index);
-    setKindergartens(newList);
+  const removeKindergarten = (id) => {
+    const kgRef = ref(db, `kindergartens/${id}`);
+    remove(kgRef);
   };
 
-  const handleChange = (index, field, value) => {
-    const newList = [...kindergartens];
-    newList[index][field] = value;
-    setKindergartens(newList);
+  const handleChange = (id, field, value) => {
+    const fieldRef = ref(db, `kindergartens/${id}/${field}`);
+    set(fieldRef, value);
   };
 
   return (
@@ -47,18 +54,16 @@ function Kindergartens() {
           value={newName}
           onChange={(e) => setNewName(e.target.value)}
           onKeyDown={(e) => {
-            if (e.key === "Enter") {
-              addKindergarten();
-            }
+            if (e.key === "Enter") addKindergarten();
           }}
           style={{ marginRight: "10px" }}
         />
         <button onClick={addKindergarten}>Dodaj przedszkole</button>
       </div>
 
-      {kindergartens.map((kg, index) => (
+      {kindergartens.map((kg) => (
         <div
-          key={index}
+          key={kg.id}
           style={{
             border: "1px solid #ccc",
             borderRadius: "8px",
@@ -68,9 +73,9 @@ function Kindergartens() {
           }}
         >
           <h3>
-            {kg.name}{" "}
+            {kg.name}
             <button
-              onClick={() => removeKindergarten(index)}
+              onClick={() => removeKindergarten(kg.id)}
               style={{
                 marginLeft: "10px",
                 backgroundColor: "red",
@@ -90,27 +95,29 @@ function Kindergartens() {
             <input
               type="text"
               value={kg.children}
-              onChange={(e) => handleChange(index, "children", e.target.value)}
+              onChange={(e) => handleChange(kg.id, "children", e.target.value)}
               placeholder="np. 20"
             />
           </label>
+
           <label style={{ display: "block", marginBottom: "10px" }}>
             Dieta bezglutenowa:{" "}
             <input
               type="text"
               value={kg.glutenFree}
               onChange={(e) =>
-                handleChange(index, "glutenFree", e.target.value)
+                handleChange(kg.id, "glutenFree", e.target.value)
               }
               placeholder="0 jeśli brak"
             />
           </label>
+
           <label style={{ display: "block", marginBottom: "10px" }}>
             Dieta bezmleczna:{" "}
             <input
               type="text"
               value={kg.dairyFree}
-              onChange={(e) => handleChange(index, "dairyFree", e.target.value)}
+              onChange={(e) => handleChange(kg.id, "dairyFree", e.target.value)}
               placeholder="0 jeśli brak"
             />
           </label>

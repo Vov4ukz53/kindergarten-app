@@ -1,52 +1,64 @@
 import React, { useState, useEffect } from "react";
+import { db } from "../firebase";
+import { ref, onValue, set, push, remove } from "firebase/database";
 
 function Menu() {
-  const [dishes, setDishes] = useState(() => {
-    const saved = localStorage.getItem("menu");
-    return saved ? JSON.parse(saved) : [];
-  });
-
+  const [menu, setMenu] = useState([]);
   const [newDishName, setNewDishName] = useState("");
-  const [newDishPortion, setNewDishPortion] = useState("");
-  const [newDishDiets, setNewDishDiets] = useState({
+  const [newPortion, setNewPortion] = useState(100);
+  const [newDiets, setNewDiets] = useState({
     bezmleczna: false,
     bezgluten: false,
   });
 
-  // Зберігаємо у LocalStorage
   useEffect(() => {
-    localStorage.setItem("menu", JSON.stringify(dishes));
-  }, [dishes]);
+    const menuRef = ref(db, "menu");
+    onValue(menuRef, (snapshot) => {
+      const data = snapshot.val() || {};
+      const list = Object.keys(data).map((key) => ({
+        id: key,
+        ...data[key],
+        diets: Array.isArray(data[key].diets) ? data[key].diets : [], // гарантуємо масив
+      }));
+      setMenu(list);
+    });
+  }, []);
 
   const addDish = () => {
-    if (!newDishName.trim() || !newDishPortion) return;
-
-    const selectedDiets = Object.keys(newDishDiets).filter(
-      (d) => newDishDiets[d]
-    );
-
-    setDishes([
-      ...dishes,
-      {
-        name: newDishName.trim(),
-        portion: Number(newDishPortion),
-        diets: selectedDiets, // масив дієт
-      },
-    ]);
-
+    if (!newDishName.trim()) return;
+    const menuRef = ref(db, "menu");
+    const newDishRef = push(menuRef);
+    set(newDishRef, {
+      name: newDishName.trim(),
+      portion: Number(newPortion),
+      diets: Object.keys(newDiets).filter((d) => newDiets[d]),
+    });
     setNewDishName("");
-    setNewDishPortion("");
-    setNewDishDiets({ bezmleczna: false, bezgluten: false });
+    setNewPortion(100);
+    setNewDiets({ bezmleczna: false, bezgluten: false });
   };
 
-  const removeDish = (index) => {
-    setDishes(dishes.filter((_, i) => i !== index));
+  const removeDish = (id) => {
+    const dishRef = ref(db, `menu/${id}`);
+    remove(dishRef);
+  };
+
+  const toggleDiet = (id, diet) => {
+    const dish = menu.find((d) => d.id === id);
+    const currentDiets = Array.isArray(dish.diets) ? dish.diets : [];
+    const updatedDiets = currentDiets.includes(diet)
+      ? currentDiets.filter((d) => d !== diet)
+      : [...currentDiets, diet];
+    set(ref(db, `menu/${id}/diets`), updatedDiets);
+  };
+
+  const updatePortion = (id, value) => {
+    set(ref(db, `menu/${id}/portion`), Number(value));
   };
 
   return (
     <div style={{ padding: "20px", fontFamily: "Arial" }}>
       <h1>Menu</h1>
-      <p>Dodaj nowe danie i zaznacz diety (jeśli brak, zostaw puste)</p>
 
       <div style={{ marginBottom: "20px" }}>
         <input
@@ -54,70 +66,56 @@ function Menu() {
           placeholder="Nazwa dania"
           value={newDishName}
           onChange={(e) => setNewDishName(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && addDish()}
           style={{ marginRight: "10px" }}
         />
         <input
           type="number"
-          placeholder="Norma na dziecko"
-          value={newDishPortion}
-          onChange={(e) => setNewDishPortion(e.target.value)}
+          placeholder="Porcja"
+          value={newPortion}
+          onChange={(e) => setNewPortion(e.target.value)}
           style={{ marginRight: "10px" }}
         />
-
         <label style={{ marginRight: "10px" }}>
           <input
             type="checkbox"
-            checked={newDishDiets.bezmleczna}
+            checked={newDiets.bezmleczna}
             onChange={() =>
-              setNewDishDiets({
-                ...newDishDiets,
-                bezmleczna: !newDishDiets.bezmleczna,
-              })
+              setNewDiets({ ...newDiets, bezmleczna: !newDiets.bezmleczna })
             }
           />{" "}
           Bezmleczna
         </label>
-
         <label style={{ marginRight: "10px" }}>
           <input
             type="checkbox"
-            checked={newDishDiets.bezgluten}
+            checked={newDiets.bezgluten}
             onChange={() =>
-              setNewDishDiets({
-                ...newDishDiets,
-                bezgluten: !newDishDiets.bezgluten,
-              })
+              setNewDiets({ ...newDiets, bezgluten: !newDiets.bezgluten })
             }
           />{" "}
           Bezgluten
         </label>
-
         <button onClick={addDish}>Dodaj danie</button>
       </div>
 
-      {dishes.length === 0 && <p>Brak dań w menu.</p>}
-
-      {dishes.map((dish, index) => (
+      {menu.map((dish) => (
         <div
-          key={index}
+          key={dish.id}
           style={{
             border: "1px solid #ccc",
             borderRadius: "8px",
             padding: "15px",
-            marginBottom: "10px",
+            marginBottom: "15px",
             maxWidth: "500px",
           }}
         >
-          <div>
-            <strong>{dish.name}</strong> - {dish.portion} g/szt.
-          </div>
-          <div>
-            Diety: {dish.diets.length > 0 ? dish.diets.join(", ") : "Brak"}
-          </div>
-          <div style={{ marginTop: "5px" }}>
+          <h3>
+            {dish.name}
             <button
-              onClick={() => removeDish(index)}
+              onClick={() => removeDish(dish.id)}
               style={{
+                marginLeft: "10px",
                 backgroundColor: "red",
                 color: "white",
                 border: "none",
@@ -128,6 +126,32 @@ function Menu() {
             >
               Usuń
             </button>
+          </h3>
+
+          <label style={{ display: "block", marginBottom: "10px" }}>
+            Porcja (g/szt.):{" "}
+            <input
+              type="number"
+              value={dish.portion}
+              onChange={(e) => updatePortion(dish.id, e.target.value)}
+            />
+          </label>
+
+          <div>
+            Diety:
+            {["bezmleczna", "bezgluten"].map((diet) => {
+              const dietsArray = Array.isArray(dish.diets) ? dish.diets : [];
+              return (
+                <label key={diet} style={{ marginLeft: "10px" }}>
+                  <input
+                    type="checkbox"
+                    checked={dietsArray.includes(diet)}
+                    onChange={() => toggleDiet(dish.id, diet)}
+                  />{" "}
+                  {diet}
+                </label>
+              );
+            })}
           </div>
         </div>
       ))}

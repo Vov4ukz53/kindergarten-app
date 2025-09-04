@@ -1,44 +1,68 @@
 import React, { useState, useEffect } from "react";
+import { db } from "../firebase";
+import { ref, onValue } from "firebase/database";
 
 function Dashboard() {
   const [kindergartens, setKindergartens] = useState([]);
   const [menu, setMenu] = useState([]);
+  const [doneMap, setDoneMap] = useState({}); // ключ: "kgId-dishId-diet"
 
+  const dietMap = {
+    bezmleczna: "dairyFree",
+    bezgluten: "glutenFree",
+  };
+
+  // Підписка на садки, меню та виконані страви
   useEffect(() => {
-    const savedKindergartens = localStorage.getItem("kindergartens");
-    const savedMenu = localStorage.getItem("menu");
+    const kgRef = ref(db, "kindergartens");
+    onValue(kgRef, (snapshot) => {
+      const data = snapshot.val() || {};
+      const list = Object.keys(data).map((key) => ({ id: key, ...data[key] }));
+      setKindergartens(list);
+    });
 
-    setKindergartens(savedKindergartens ? JSON.parse(savedKindergartens) : []);
-    setMenu(
-      savedMenu
-        ? JSON.parse(savedMenu).map((d) => ({
-            ...d,
-            diets: Array.isArray(d.diets) ? d.diets : [],
-          }))
-        : []
-    );
+    const menuRef = ref(db, "menu");
+    onValue(menuRef, (snapshot) => {
+      const data = snapshot.val() || {};
+      const list = Object.keys(data).map((key) => ({
+        id: key,
+        ...data[key],
+        diets: Array.isArray(data[key].diets) ? data[key].diets : [],
+      }));
+      setMenu(list);
+    });
+
+    const doneRef = ref(db, "doneMap");
+    onValue(doneRef, (snapshot) => {
+      const data = snapshot.val() || {};
+      setDoneMap(data);
+    });
   }, []);
 
   const calculateAmount = (dish, kg, diet = "") => {
-    if (diet === "bezmleczna") return Number(kg.dairyFree || 0) * dish.portion;
-    if (diet === "bezgluten") return Number(kg.glutenFree || 0) * dish.portion;
-    return Number(kg.children || 0) * dish.portion;
+    if (!diet) return Number(kg.children || 0) * dish.portion;
+    const field = dietMap[diet];
+    return Number(kg[field] || 0) * dish.portion;
   };
 
+  // Формуємо колонки таблиці
   const tableColumns = menu.flatMap((dish) => {
-    const normal = { name: dish.name, diet: "", portion: dish.portion };
-    const dietColumns =
-      dish.diets && dish.diets.length > 0
-        ? dish.diets.map((d) => ({
-            name: dish.name,
-            diet: d,
-            portion: dish.portion,
-          }))
-        : [];
-    return [normal, ...dietColumns];
+    const normal = {
+      id: dish.id,
+      name: dish.name,
+      diet: "",
+      portion: dish.portion,
+    };
+    const dietCols = dish.diets.map((d) => ({
+      id: dish.id,
+      name: dish.name,
+      diet: d,
+      portion: dish.portion,
+    }));
+    return [normal, ...dietCols];
   });
 
-  // Підрахунок сум по кожній колонці
+  // Підрахунок загальних сум
   const totals = tableColumns.map((col) =>
     kindergartens.reduce(
       (sum, kg) => sum + calculateAmount(col, kg, col.diet),
@@ -70,26 +94,26 @@ function Dashboard() {
             </tr>
           </thead>
           <tbody>
-            {kindergartens.map((kg, kidx) => (
-              <tr key={kidx}>
+            {kindergartens.map((kg) => (
+              <tr key={kg.id}>
                 <td>{kg.name}</td>
                 {tableColumns.map((col, cidx) => {
                   const amount = calculateAmount(col, kg, col.diet);
-                  if (col.diet === "bezmleczna") {
-                    return (
-                      <td key={cidx}>
-                        {amount} ({kg.dairyFree || 0})
-                      </td>
-                    );
-                  } else if (col.diet === "bezgluten") {
-                    return (
-                      <td key={cidx}>
-                        {amount} ({kg.glutenFree || 0})
-                      </td>
-                    );
-                  } else {
-                    return <td key={cidx}>{amount}</td>;
-                  }
+                  const key = `${kg.id}-${col.id}-${col.diet || "normal"}`;
+                  const isDone = doneMap[key];
+
+                  return (
+                    <td
+                      key={cidx}
+                      style={{
+                        textAlign: "center",
+                        background: isDone ? "#b2f2bb" : "#fff",
+                        fontWeight: isDone ? "bold" : "normal",
+                      }}
+                    >
+                      {amount}
+                    </td>
+                  );
                 })}
               </tr>
             ))}
